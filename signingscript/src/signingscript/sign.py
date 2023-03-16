@@ -1535,6 +1535,12 @@ async def sign_debian_pkg(context, path, fmt, *args, **kwargs):
     Unpacks a tarball and signs the .dsc .buildinfo .changes files using the autograph /sign/files end-point.
     Then, it re-compresses the tarball and uploads the new tarball with the signed files as an artifact.
     """
+    # Autograph disallows most non-alphanumeric characters in filenames, but
+    # some characters (like `~`) have special meaning in Debian versioning.
+    ESCAPE_SEQUENCES = {
+        "~": "__tilde__",
+    }
+
     cert_type = task.task_cert_type(context)
     autograph_config = get_autograph_config(context.autograph_configs, cert_type, [fmt], raise_on_empty=True)
     cert_type = task.task_cert_type(context)
@@ -1547,6 +1553,12 @@ async def sign_debian_pkg(context, path, fmt, *args, **kwargs):
     input_paths = [p for p in all_paths if p.suffix in extensions]
     # Used to convert back signed files to their original paths.
     name_to_path = {p.name: p for p in input_paths}
+
+    # Replace invalid characters in file names.
+    for i, path in enumerate(input_paths):
+        for find, replace in ESCAPE_SEQUENCES.items():
+            if find in path.name:
+                input_paths[i] = path.rename(path.name.replace(find, replace))
 
     signed_files = []
     with ExitStack() as stack:
@@ -1561,6 +1573,10 @@ async def sign_debian_pkg(context, path, fmt, *args, **kwargs):
 
     for signed_file in signed_files:
         name = signed_file["name"]
+        # Convert replaced characters back to their original.
+        for replace, find in ESCAPE_SEQUENCES.items():
+            name = name.replace(find, replace)
+
         # go from base64 back to bytes before writing the files to disk
         content = base64.b64decode(signed_file["content"])
 
