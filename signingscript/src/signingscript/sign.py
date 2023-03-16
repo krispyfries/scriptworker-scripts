@@ -21,6 +21,7 @@ import zipfile
 from contextlib import ExitStack
 from functools import wraps
 from io import BytesIO
+from pathlib import Path
 
 import mohawk
 import winsign.sign
@@ -1538,14 +1539,18 @@ async def sign_debian_pkg(context, path, fmt, *args, **kwargs):
     autograph_config = get_autograph_config(context.autograph_configs, cert_type, [fmt], raise_on_empty=True)
     cert_type = task.task_cert_type(context)
     _, compression = os.path.splitext(path)
+
     # Find *.dsc *.buildinfo *.changes. These are the files in the debian package we need to sign.
     extensions = (".dsc", ".buildinfo", ".changes")
-    tmp_dir = os.path.join(context.config["work_dir"], "untarred")
-    all_file_names = await _extract_tarfile(context, path, compression, tmp_dir=tmp_dir)
-    input_file_names = [input_file_name for input_file_name in all_file_names if input_file_name.endswith(extensions)]
-    basename_to_file_name = {os.path.basename(input_file_name): input_file_name for input_file_name in input_file_names}
+    tmp_dir = Path(context.config["work_dir"]) / "untarred"
+    all_paths = map(Path, await _extract_tarfile(context, path, compression, tmp_dir=str(tmp_dir)))
+    input_paths = [p for p in all_paths if p.suffix in extensions]
+    # Used to convert back signed files to their original paths.
+    name_to_path = {p.name: p for p in input_paths}
+
+    signed_files = []
     with ExitStack() as stack:
-        input_files = [stack.enter_context(open(input_file_name, "rb")) for input_file_name in input_file_names]
+        input_files = [stack.enter_context(p.open("rb")) for p in input_paths]
         signed_files = await sign_with_autograph(
             context.session,
             autograph_config,
@@ -1553,10 +1558,14 @@ async def sign_debian_pkg(context, path, fmt, *args, **kwargs):
             fmt,
             "files",
         )
-    # go from base64 back to bytes before writing the files to disk
-    signed_files = [{"name": basename_to_file_name[signed_file["name"]], "content": base64.b64decode(signed_file["content"])} for signed_file in signed_files]
+
     for signed_file in signed_files:
-        with open(signed_file["name"], "wb") as output_file:
-            output_file.write(signed_file["content"])
-    await _create_tarfile(context, path, all_file_names, compression, tmp_dir=tmp_dir)
+        name = signed_file["name"]
+        # go from base64 back to bytes before writing the files to disk
+        content = base64.b64decode(signed_file["content"])
+
+        path = name_to_path[name]
+        path.write_bytes(content)
+
+    await _create_tarfile(context, path, all_paths, compression, tmp_dir=str(tmp_dir))
     return path
