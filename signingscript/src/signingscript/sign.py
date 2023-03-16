@@ -80,6 +80,9 @@ _DEFAULT_MAR_VERIFY_KEYS = {
 # Langpacks expect the following re to match for addon id
 LANGPACK_RE = re.compile(r"^langpack-[a-zA-Z]+(?:-[a-zA-Z]+){0,2}@(?:firefox|devedition).mozilla.org$")
 
+# autograph expects unsigned file names to conform to the following regex
+FILENAME_RE = re.compile(r"^[-_\.a-zA-Z0-9]{1,256}$")
+
 
 def get_rss():
     """Return the maximum resident set size for this process."""
@@ -964,8 +967,16 @@ def make_signing_req(input_file, fmt, keyid=None, extension_id=None):
     """Make a signing request object to pass to autograph."""
     if isinstance(input_file, list):
         sign_req = {"files": []}
+        invalid_files = set()
         for f in input_file:
+            if not FILENAME_RE.match(f.name):
+                invalid_files.add(f.name)
+                continue
             sign_req["files"].append({"name": f.name, "content": f})
+
+        if invalid_files:
+            raise SigningScriptError(f"The following file names do not conform to `{FILENAME_RE.pattern}`:\n" +
+                                     "\n".join(sorted(invalid_files)))
     else:
         sign_req = {"input": input_file}
 

@@ -10,6 +10,7 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from argparse import Namespace
 from contextlib import contextmanager
 from hashlib import sha256
 from io import BufferedRandom, BytesIO
@@ -795,6 +796,16 @@ def test_signreq_task_langpack():
     assert len(req["options"]["cose_algorithms"]) == 1
     assert req["options"]["cose_algorithms"][0] == "ES256"
     assert req["options"]["pkcs7_digest"] == "SHA256"
+
+
+def test_signreq_invalid_filename():
+    files = [
+        Namespace(name="valid_file", content=""),
+        Namespace(name="invalid!file1", content=""),
+        Namespace(name="invalid~file2", content=""),
+    ]
+    with pytest.raises(SigningScriptError):
+        sign.make_signing_req(files, "test")
 
 
 @pytest.mark.asyncio
