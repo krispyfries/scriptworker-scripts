@@ -1034,6 +1034,11 @@ async def sign_with_autograph(session, server, input_file, fmt, autograph_method
 
     url = f"{server.url}/sign/{autograph_method}"
 
+    from pprint import pprint
+    print("===================")
+    print(url)
+    pprint(sign_req, indent=2)
+
     sign_resp = await retry_async(
         call_autograph, args=(session, url, server.client_id, server.access_key, sign_req), attempts=3, sleeptime_kwargs={"delay_factor": 2.0}
     )
